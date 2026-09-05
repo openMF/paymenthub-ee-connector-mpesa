@@ -29,7 +29,7 @@ roster:
   host: "http://localhost:5004"
 
 operations:
-  host: http://ph-ee-operations-app
+  host: http://paymenthub-ee-bff:80
   base-url: /api/v1/errorcode
   filter-path: /filter
 
