@@ -3,12 +3,12 @@ package org.mifos.connector.mpesa.utility;
 import org.apache.camel.util.json.JsonObject;
 import org.mifos.connector.common.channel.dto.TransactionChannelC2BRequestDTO;
 import org.mifos.connector.common.gsma.dto.GsmaParty;
+import org.mifos.connector.mpesa.config.MpesaApiProperties;
 import org.mifos.connector.mpesa.dto.BuyGoodsPaymentRequestDTO;
 import org.mifos.connector.mpesa.dto.StkCallback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -28,11 +28,8 @@ public class SafaricomUtils {
     @Autowired
     private MpesaUtils mpesaUtils;
 
-    @Value("${mpesa.local.host}")
-    private String host;
-
-    @Value("${mpesa.local.transaction-callback}")
-    private String callbackEndpoint;
+    @Autowired
+    private MpesaApiProperties mpesaApiProperties;
 
     private MpesaProps.MPESA mpesaProps;
 
@@ -61,7 +58,7 @@ public class SafaricomUtils {
         }
 
         buyGoodsPaymentRequestDTO.setTimestamp(""+timestamp);
-        buyGoodsPaymentRequestDTO.setCallBackURL(host + callbackEndpoint);
+        buyGoodsPaymentRequestDTO.setCallBackURL(mpesaApiProperties.local().host() + mpesaApiProperties.local().transactionCallback());
 
         buyGoodsPaymentRequestDTO.setPartyA(payer);
         buyGoodsPaymentRequestDTO.setPhoneNumber(payer);

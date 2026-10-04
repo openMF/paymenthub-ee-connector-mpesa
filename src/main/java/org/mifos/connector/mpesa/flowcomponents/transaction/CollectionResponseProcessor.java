@@ -6,11 +6,11 @@ import io.camunda.zeebe.client.ZeebeClient;
 import org.apache.camel.Exchange;
 import org.apache.camel.http.base.HttpOperationFailedException;
 import org.apache.camel.util.json.JsonObject;
+import org.mifos.connector.mpesa.config.ZeebeProperties;
 import org.mifos.connector.mpesa.utility.ZeebeUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.apache.camel.Processor;
 import java.time.Duration;
@@ -31,11 +31,11 @@ public class CollectionResponseProcessor implements Processor {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @Value("${zeebe.client.ttl}")
-    private int timeToLive;
+    private final ZeebeProperties zeebeProperties;
 
-    public CollectionResponseProcessor(ZeebeClient zeebeClient) {
+    public CollectionResponseProcessor(ZeebeClient zeebeClient, ZeebeProperties zeebeProperties) {
         this.zeebeClient = zeebeClient;
+        this.zeebeProperties = zeebeProperties;
     }
 
     @Override
@@ -124,7 +124,7 @@ public class CollectionResponseProcessor implements Processor {
         zeebeClient.newPublishMessageCommand()
                 .messageName(TRANSFER_MESSAGE)
                 .correlationKey(clientCorrelationId)
-                .timeToLive(Duration.ofMillis(timeToLive))
+                .timeToLive(Duration.ofMillis(zeebeProperties.client().ttl()))
                 .variables(variables)
                 .send()
                 .join();

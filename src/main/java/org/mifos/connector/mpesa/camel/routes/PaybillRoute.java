@@ -38,7 +38,8 @@ import static org.mifos.connector.mpesa.zeebe.ZeebeVariables.TRANSFER_CREATE_FAI
 @Component
 public class PaybillRoute extends ErrorHandlerRouteBuilder {
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
-    private ObjectMapper objectMapper = new ObjectMapper();
+    @Autowired
+    private ObjectMapper objectMapper;
     @Autowired
     private ZeebeClient zeebeClient;
     @Value("${channel.host}")

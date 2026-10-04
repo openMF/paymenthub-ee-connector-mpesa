@@ -25,7 +25,6 @@ public class TransactionResponseProcessor implements Processor{
             exchange.setProperty(ERROR_DESCRIPTION, getErrorDescription(body));
         } else {
             exchange.setProperty(TRANSACTION_FAILED, false);
-            exchange.setProperty(SERVER_TRANSACTION_ID, exchange.getProperty(SERVER_TRANSACTION_ID));
         }
 
     }

@@ -4,6 +4,7 @@ import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.jackson.ListJacksonDataFormat;
+import org.mifos.connector.mpesa.config.OperationsApiProperties;
 import org.mifos.connector.mpesa.dto.ErrorCode;
 import org.mifos.connector.mpesa.flowcomponents.transaction.ErrorProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,14 +16,8 @@ import static org.mifos.connector.mpesa.camel.config.OperationsProperties.FILTER
 @Component
 public class OperationsRoute extends RouteBuilder {
 
-    @Value("${operations.host}")
-    private String operationsHost;
-
-    @Value("${operations.base-url}")
-    private String operationsBaseUrl;
-
-    @Value("${operations.filter-path}")
-    private String operationsFilterPath;
+    @Autowired
+    private OperationsApiProperties operationsApiProperties;
 
     @Value("${tenant}")
     private String tenantId;
@@ -101,8 +96,7 @@ public class OperationsRoute extends RouteBuilder {
     }
 
     private String getFilterUrl() {
-        String url = operationsHost + operationsBaseUrl + operationsFilterPath;
         String internalParams = "?bridgeEndpoint=true&throwExceptionOnFailure=false";
-        return url + internalParams;
+        return operationsApiProperties.filterUrl() + internalParams;
     }
 }

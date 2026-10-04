@@ -8,6 +8,7 @@ import org.apache.camel.model.dataformat.JsonLibrary;
 import org.apache.camel.util.json.JsonObject;
 import org.json.JSONObject;
 import org.mifos.connector.mpesa.auth.AccessTokenStore;
+import org.mifos.connector.mpesa.config.MpesaApiProperties;
 import org.mifos.connector.mpesa.dto.BuyGoodsPaymentRequestDTO;
 import org.mifos.connector.mpesa.dto.StkCallback;
 import org.mifos.connector.mpesa.dto.TransactionStatusRequestDTO;
@@ -21,7 +22,6 @@ import org.mifos.connector.mpesa.utility.MpesaUtils;
 import org.mifos.connector.mpesa.utility.SafaricomUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import static org.mifos.connector.mpesa.camel.config.CamelProperties.*;
 import static org.mifos.connector.mpesa.safaricom.config.SafaricomProperties.MPESA_BUY_GOODS_TRANSACTION_TYPE;
@@ -34,17 +34,7 @@ public class SafaricomRoutesBuilder extends RouteBuilder {
 
 
 
-    @Value("${mpesa.api.lipana}")
-    private String buyGoodsLipanaUrl;
-
-    @Value("${mpesa.api.transaction-status}")
-    private String transactionStatusUrl;
-
-    @Value("${mpesa.max-retry-count}")
-    private Integer maxRetryCount;
-
-    @Value("${mpesa.api.timeout}")
-    private Integer mpesaTimeout;
+    private final MpesaApiProperties mpesaApiProperties;
 
     private final ObjectMapper objectMapper;
 
@@ -70,7 +60,8 @@ public class SafaricomRoutesBuilder extends RouteBuilder {
                                   TransactionResponseProcessor transactionResponseProcessor,
                                   MpesaGenericProcessor mpesaGenericProcessor,
                                   AccessTokenStore accessTokenStore, CorrelationIDStore correlationIDStore, SafaricomUtils safaricomUtils,
-                                  MpesaUtils mpesaUtils) {
+                                  MpesaUtils mpesaUtils, MpesaApiProperties mpesaApiProperties) {
+        this.mpesaApiProperties = mpesaApiProperties;
         this.objectMapper = objectMapper;
         this.collectionResponseProcessor = collectionResponseProcessor;
         this.transactionResponseProcessor = transactionResponseProcessor;
@@ -185,7 +176,7 @@ public class SafaricomRoutesBuilder extends RouteBuilder {
         from("direct:buy-goods-base")
                 .id("buy-goods-base")
                 .log(LoggingLevel.INFO, "Starting buy goods flow")
-                .log(LoggingLevel.INFO, "Starting buy goods flow with retry count: " + maxRetryCount)
+                .log(LoggingLevel.INFO, "Starting buy goods flow with retry count: " + mpesaApiProperties.maxRetryCount())
                 .to("direct:get-access-token")
                 .process(exchange -> exchange.setProperty(ACCESS_TOKEN, accessTokenStore.getAccessToken()))
                 .log(LoggingLevel.INFO, "Got access token, moving on to API call.")
@@ -204,7 +195,7 @@ public class SafaricomRoutesBuilder extends RouteBuilder {
                 .id("buy-goods-get-transaction-status-base")
                 .log(LoggingLevel.INFO, "Starting buy goods transaction status flow")
                 .choice()
-                .when(exchangeProperty(SERVER_TRANSACTION_STATUS_RETRY_COUNT).isLessThanOrEqualTo(maxRetryCount))
+                .when(exchangeProperty(SERVER_TRANSACTION_STATUS_RETRY_COUNT).isLessThanOrEqualTo(mpesaApiProperties.maxRetryCount()))
                 .to("direct:get-access-token")
                 .process(exchange -> exchange.setProperty(ACCESS_TOKEN, accessTokenStore.getAccessToken()))
                 .log(LoggingLevel.INFO, "Got access token, moving on to API call.")
@@ -346,8 +337,8 @@ public class SafaricomRoutesBuilder extends RouteBuilder {
                     return buyGoodsPaymentRequestDTO;
                 })
                 .marshal().json(JsonLibrary.Jackson)
-                .toD(mpesaProps.getApiHost() + buyGoodsLipanaUrl +"?bridgeEndpoint=true&throwExceptionOnFailure=false&" +
-                        ConnectionUtils.getConnectionTimeoutDsl(mpesaTimeout))
+                .toD(mpesaProps.getApiHost() + mpesaApiProperties.api().lipana() + "?bridgeEndpoint=true&throwExceptionOnFailure=false&" +
+                        ConnectionUtils.getConnectionTimeoutDsl(mpesaApiProperties.api().timeout()))
                 .process(mpesaGenericProcessor)
                 .log(LoggingLevel.INFO, "MPESA API called, response: \n\n ${body}");
 
@@ -381,8 +372,9 @@ public class SafaricomRoutesBuilder extends RouteBuilder {
                     return  transactionStatusRequestDTO;
                 })
                 .marshal().json(JsonLibrary.Jackson)
-                .toD(mpesaProps.getApiHost() + transactionStatusUrl +"?bridgeEndpoint=true&throwExceptionOnFailure=false&"+
-                        ConnectionUtils.getConnectionTimeoutDsl(mpesaTimeout))
+                .toD(mpesaProps.getApiHost() + mpesaApiProperties.api().transactionStatus()
+                        + "?bridgeEndpoint=true&throwExceptionOnFailure=false&"
+                        + ConnectionUtils.getConnectionTimeoutDsl(mpesaApiProperties.api().timeout()))
                 .process(mpesaGenericProcessor)
                 .log(LoggingLevel.INFO, "MPESA STATUS called, response: \n\n ${body}");
     }

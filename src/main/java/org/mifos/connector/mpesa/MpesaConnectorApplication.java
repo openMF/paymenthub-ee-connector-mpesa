@@ -9,11 +9,13 @@ import org.apache.camel.Processor;
 import org.mifos.connector.mpesa.camel.config.CustomHeaderFilterStrategy;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.annotation.Bean;
 
 import static org.mifos.connector.mpesa.camel.config.CamelProperties.CUSTOM_HEADER_FILTER_STRATEGY;
 
 @SpringBootApplication
+@ConfigurationPropertiesScan("org.mifos.connector.mpesa.config")
 public class MpesaConnectorApplication {
 
     @Bean

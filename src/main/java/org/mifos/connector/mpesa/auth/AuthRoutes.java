@@ -4,13 +4,13 @@ import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.model.dataformat.JsonLibrary;
+import org.mifos.connector.mpesa.config.MpesaApiProperties;
 import org.mifos.connector.mpesa.utility.ConnectionUtils;
 import org.mifos.connector.mpesa.utility.MpesaProps;
 import org.mifos.connector.mpesa.utility.MpesaUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -28,8 +28,8 @@ public class AuthRoutes extends RouteBuilder {
     @Autowired
     private MpesaUtils mpesautils;
 
-    @Value("${mpesa.api.timeout}")
-    private Integer mpesaTimeout;
+    @Autowired
+    private MpesaApiProperties mpesaApiProperties;
 
     private MpesaProps.MPESA mpesaProps;
 
@@ -60,7 +60,7 @@ public class AuthRoutes extends RouteBuilder {
                 .process(exchange -> {
                     accessTokenStore.setAccessToken(exchange.getIn().getBody(AccessTokenResponseDTO.class).getAccessToken());
                     accessTokenStore.setExpiresOn(exchange.getIn().getBody(AccessTokenResponseDTO.class).getExpiresIn());
-                    logger.info("Saved Access Token: " + accessTokenStore.getAccessToken());
+                    logger.info("Saved Access Token: {}", MpesaUtils.maskString(accessTokenStore.getAccessToken()));
                 });
 
         /*
@@ -78,7 +78,7 @@ public class AuthRoutes extends RouteBuilder {
                 .setHeader("Authorization", simple("Basic " + createAuthHeader(mpesaProps.getClientKey(),mpesaProps.getClientSecret())))
                 .setHeader(Exchange.HTTP_RAW_QUERY, constant("grant_type=client_credentials"))
                 .toD(mpesaProps.getAuthHost() + "?bridgeEndpoint=true" + "&" +
-                        "throwExceptionOnFailure=false&" + ConnectionUtils.getConnectionTimeoutDsl(mpesaTimeout));
+                        "throwExceptionOnFailure=false&" + ConnectionUtils.getConnectionTimeoutDsl(mpesaApiProperties.api().timeout()));
 
         /*
           Access Token check validity and return value

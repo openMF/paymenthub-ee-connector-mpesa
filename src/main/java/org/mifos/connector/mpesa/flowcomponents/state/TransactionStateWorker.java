@@ -7,6 +7,7 @@ import org.apache.camel.Exchange;
 import org.apache.camel.ProducerTemplate;
 import org.apache.camel.support.DefaultExchange;
 import org.mifos.connector.common.channel.dto.TransactionChannelC2BRequestDTO;
+import org.mifos.connector.mpesa.config.SkipProperties;
 import org.mifos.connector.mpesa.dto.BuyGoodsPaymentRequestDTO;
 import org.mifos.connector.mpesa.utility.SafaricomUtils;
 import org.slf4j.Logger;
@@ -41,11 +42,12 @@ public class TransactionStateWorker {
     @Autowired
     private SafaricomUtils safaricomUtils;
 
+    @Autowired
+    private SkipProperties skipProperties;
+
+    // SpEL expression in application.yml, so it has to stay a @Value: only @Value evaluates SpEL.
     @Value("${zeebe.client.evenly-allocated-max-jobs}")
     private int workerMaxJobs;
-
-    @Value("${skip.enabled}")
-    private Boolean skipMpesa;
 
     @PostConstruct
     public void setupWorkers() {
@@ -56,16 +58,16 @@ public class TransactionStateWorker {
                     logger.info("Job '{}' started from process '{}' with key {}", job.getType(), job.getBpmnProcessId(), job.getKey());
 
                     Map<String, Object> variables = job.getVariablesAsMap();
-                    if(skipMpesa){
+                    if (skipProperties.enabled()) {
                         logger.info("Skipping MPESA");
-                        Exchange exchange = new DefaultExchange(camelContext);
-                        String serverTransactionId = exchange.getProperty(SERVER_TRANSACTION_ID, String.class);
                         Integer retryCount = 1 + (Integer) variables.getOrDefault(SERVER_TRANSACTION_STATUS_RETRY_COUNT, 0);
                         variables.put(TRANSACTION_FAILED, false);
                         variables.put(TRANSFER_CREATE_FAILED, false);
                         variables.put(SERVER_TRANSACTION_STATUS_RETRY_COUNT, retryCount);
-                        variables.put(SERVER_TRANSACTION_ID, serverTransactionId);
-                        exchange.setProperty(TIMER, variables.get(TIMER));
+                        // Was read off a brand new Exchange nothing had written to, so it was always null. Kept as an
+                        // explicit null so the published variables are exactly what they were before. The Exchange the
+                        // TIMER property was set on was then discarded, so that line went nowhere and is gone.
+                        variables.put(SERVER_TRANSACTION_ID, null);
                         zeebeClient.newPublishMessageCommand()
                                 .messageName(TRANSFER_MESSAGE)
                                 .correlationKey((String) variables.get("transactionId"))

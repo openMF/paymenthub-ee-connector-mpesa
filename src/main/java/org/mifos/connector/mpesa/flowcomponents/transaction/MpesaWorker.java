@@ -7,6 +7,8 @@ import org.apache.camel.Exchange;
 import org.apache.camel.ProducerTemplate;
 import org.apache.camel.support.DefaultExchange;
 import org.mifos.connector.common.channel.dto.TransactionChannelC2BRequestDTO;
+import org.mifos.connector.mpesa.config.SkipProperties;
+import org.mifos.connector.mpesa.config.ZeebeProperties;
 import org.mifos.connector.mpesa.dto.BuyGoodsPaymentRequestDTO;
 import org.mifos.connector.mpesa.utility.MpesaUtils;
 import org.mifos.connector.mpesa.utility.SafaricomUtils;
@@ -57,14 +59,15 @@ public class MpesaWorker {
     @Autowired
     private MpesaUtils mpesaUtils;
 
+    @Autowired
+    private ZeebeProperties zeebeProperties;
+
+    @Autowired
+    private SkipProperties skipProperties;
+
+    // SpEL expression in application.yml, so it has to stay a @Value: only @Value evaluates SpEL.
     @Value("${zeebe.client.evenly-allocated-max-jobs}")
     private int workerMaxJobs;
-
-    @Value("${zeebe.init-transfer.wait-timer}")
-    private int initTransferWaitTimer;
-
-    @Value("${skip.enabled}")
-    private Boolean skipMpesa;
 
     @PostConstruct
     public void setupWorkers() {
@@ -74,6 +77,7 @@ public class MpesaWorker {
                 .handler((client, job) -> {
                     logger.info("Job '{}' started from process '{}' with key {}", job.getType(), job.getBpmnProcessId(), job.getKey());
                     long t1 = System.currentTimeMillis();
+                    int initTransferWaitTimer = zeebeProperties.initTransfer().waitTimer();
                     logger.info("Going to sleep at " + t1 + " for " + initTransferWaitTimer + " seconds");
                     ZeebeUtils.sleep(initTransferWaitTimer);
                     long t2 = System.currentTimeMillis();
@@ -82,13 +86,13 @@ public class MpesaWorker {
 
                     Map<String, Object> variables = job.getVariablesAsMap();
                     mpesaUtils.setProcess(job.getBpmnProcessId());
-                    if (skipMpesa) {
+                    if (skipProperties.enabled()) {
                         logger.info("Skipping MPESA");
-                        Exchange exchange = new DefaultExchange(camelContext);
-                        String serverTransactionId = exchange.getProperty(SERVER_TRANSACTION_ID, String.class);
                         variables.put(TRANSACTION_FAILED, false);
                         variables.put(TRANSFER_CREATE_FAILED, false);
-                        variables.put(SERVER_TRANSACTION_ID, serverTransactionId);
+                        // Was read off a brand new Exchange nothing had written to, so it was always null. Kept as an
+                        // explicit null so the published variables are exactly what they were before.
+                        variables.put(SERVER_TRANSACTION_ID, null);
                     } else {
                         TransactionChannelC2BRequestDTO channelRequest = objectMapper.readValue(
                                 (String) variables.get("mpesaChannelRequest"), TransactionChannelC2BRequestDTO.class);

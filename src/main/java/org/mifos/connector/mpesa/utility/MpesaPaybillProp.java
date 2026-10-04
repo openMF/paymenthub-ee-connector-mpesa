@@ -25,10 +25,6 @@ public class MpesaPaybillProp {
         return groups;
     }
 
-    public void setGroup(List<ShortCodeAms> shortCodeGroup) {
-        this.groups = shortCodeGroup;
-    }
-
     public String getAMSFromShortCode(String businessShortCode) {
         String amsName = getGroups().stream()
                 .filter(p -> p.getBusinessShortCode().equalsIgnoreCase(businessShortCode))
