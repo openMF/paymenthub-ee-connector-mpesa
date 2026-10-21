@@ -111,21 +111,7 @@ public class MpesaWorker {
                         producerTemplate.send("direct:buy-goods-base", exchange);
                         variables.put(MPESA_API_RESPONSE, exchange.getProperty(MPESA_API_RESPONSE));
 
-                        boolean isTransactionFailed = exchange.getProperty(TRANSACTION_FAILED, boolean.class);
-                        if (isTransactionFailed) {
-                            variables.put(TRANSACTION_FAILED, true);
-                            variables.put(TRANSFER_CREATE_FAILED, true);
-                            variables.put(TRANSFER_RESPONSE_CREATE, ZeebeUtils.getTransferResponseCreateJson());
-                            String errorBody = exchange.getProperty(ERROR_INFORMATION, String.class);
-                            variables.put(ERROR_INFORMATION, errorBody);
-                            variables.put(ERROR_CODE, exchange.getProperty(ERROR_CODE, String.class));
-                            variables.put(ERROR_DESCRIPTION, exchange.getProperty(ERROR_DESCRIPTION, String.class));
-                        } else {
-                            String serverTransactionId = exchange.getProperty(SERVER_TRANSACTION_ID, String.class);
-                            variables.put(TRANSACTION_FAILED, false);
-                            variables.put(TRANSFER_CREATE_FAILED, false);
-                            variables.put(SERVER_TRANSACTION_ID, serverTransactionId);
-                        }
+                        applyBuyGoodsResult(exchange, variables);
                     }
 
                     client.newCompleteCommand(job.getKey())
@@ -152,5 +138,33 @@ public class MpesaWorker {
                 .name("Cleanup")
                 .maxJobsActive(workerMaxJobs)
                 .open();
+    }
+
+    /**
+     * Copies the buy-goods route's outcome into the job variables. The route's response
+     * processor always sets TRANSACTION_FAILED, so it is missing only when the route threw:
+     * producerTemplate.send keeps that exception on the exchange, and reading the absent
+     * property as a primitive boolean gave false, so a failed payment was reported as made.
+     */
+    static void applyBuyGoodsResult(Exchange exchange, Map<String, Object> variables) {
+        Exception routeFailure = exchange.getException();
+        boolean isTransactionFailed = routeFailure != null
+                || !Boolean.FALSE.equals(exchange.getProperty(TRANSACTION_FAILED, Boolean.class));
+        if (isTransactionFailed) {
+            variables.put(TRANSACTION_FAILED, true);
+            variables.put(TRANSFER_CREATE_FAILED, true);
+            variables.put(TRANSFER_RESPONSE_CREATE, ZeebeUtils.getTransferResponseCreateJson());
+            String errorBody = exchange.getProperty(ERROR_INFORMATION, String.class);
+            if (errorBody == null && routeFailure != null) {
+                errorBody = routeFailure.getMessage();
+            }
+            variables.put(ERROR_INFORMATION, errorBody);
+            variables.put(ERROR_CODE, exchange.getProperty(ERROR_CODE, String.class));
+            variables.put(ERROR_DESCRIPTION, exchange.getProperty(ERROR_DESCRIPTION, String.class));
+        } else {
+            variables.put(TRANSACTION_FAILED, false);
+            variables.put(TRANSFER_CREATE_FAILED, false);
+            variables.put(SERVER_TRANSACTION_ID, exchange.getProperty(SERVER_TRANSACTION_ID, String.class));
+        }
     }
 }
