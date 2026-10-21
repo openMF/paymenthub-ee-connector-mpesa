@@ -147,7 +147,12 @@ public class PaybillRoute extends ErrorHandlerRouteBuilder {
                     String workflowInstanceKey = channelResponse.getString("transactionId");
 
                     String clientCorrelationId = e.getIn().getHeader(CLIENT_CORRELATION_ID).toString();
-                    Boolean reconciled = reconciledStore.get(clientCorrelationId);
+                    // The store is in memory: after a restart (or on another pod) there is no entry,
+                    // and unboxing the null answered Safaricom with a 500. Treat it as not reconciled.
+                    boolean reconciled = Boolean.TRUE.equals(reconciledStore.get(clientCorrelationId));
+                    if (!reconciledStore.containsKey(clientCorrelationId)) {
+                        logger.warn("No reconciliation result stored for {}; answering Rejected", clientCorrelationId);
+                    }
                     // Storing the key value
                     workflowInstanceStore.put(clientCorrelationId, workflowInstanceKey);
                     reconciledStore.remove(clientCorrelationId);
@@ -199,7 +204,15 @@ public class PaybillRoute extends ErrorHandlerRouteBuilder {
                     variables.put(CHANNEL_REQUEST, obj.toString());
                     variables.put("amount", paybillConfirmationRequestDTO.getTransactionAmount());
                     variables.put("accountId", paybillConfirmationRequestDTO.getBillRefNo());
-                    variables.put("originDate", Long.parseLong(paybillConfirmationRequestDTO.getTransactionTime()));
+                    // TransTime may be missing; parsing it unchecked answered the confirmation with a 500.
+                    // (It is yyyyMMddHHmmss, not epoch milliseconds - see PHEE-422; value kept as it was.)
+                    String transactionTime = paybillConfirmationRequestDTO.getTransactionTime();
+                    if (transactionTime != null && transactionTime.trim().matches("\\d+")) {
+                        variables.put("originDate", Long.parseLong(transactionTime.trim()));
+                    } else {
+                        logger.warn("Paybill confirmation {} has no numeric TransTime ({}); originDate not set",
+                                mpesaTransactionId, transactionTime);
+                    }
                     variables.put("phoneNumber", paybillConfirmationRequestDTO.getMsisdn());
                     variables.put("mpesaTransactionId", mpesaTransactionId);
                     variables.put(TRANSACTION_ID, transactionId);
