@@ -9,6 +9,7 @@ import org.json.JSONObject;
 import org.mifos.connector.common.camel.ErrorHandlerRouteBuilder;
 import org.mifos.connector.common.gsma.dto.GsmaTransfer;
 import org.mifos.connector.mpesa.dto.ChannelRequestDTO;
+import org.mifos.connector.mpesa.config.ZeebeProperties;
 import org.mifos.connector.mpesa.dto.ChannelSettlementRequestDTO;
 import org.mifos.connector.mpesa.dto.PaybillRequestDTO;
 import org.mifos.connector.mpesa.dto.PaybillResponseDTO;
@@ -49,6 +50,8 @@ public class PaybillRoute extends ErrorHandlerRouteBuilder {
     private final String secondaryIdentifierName = "MSISDN";
     @Autowired
     private MpesaPaybillProp mpesaPaybillProp;
+    @Autowired
+    private ZeebeProperties zeebeProperties;
 
     public static HashMap<String, Boolean> reconciledStore = new HashMap<>();
     public static HashMap<String, String> workflowInstanceStore = new HashMap<>();
@@ -144,7 +147,12 @@ public class PaybillRoute extends ErrorHandlerRouteBuilder {
                     String workflowInstanceKey = channelResponse.getString("transactionId");
 
                     String clientCorrelationId = e.getIn().getHeader(CLIENT_CORRELATION_ID).toString();
-                    Boolean reconciled = reconciledStore.get(clientCorrelationId);
+                    // The store is in memory: after a restart (or on another pod) there is no entry,
+                    // and unboxing the null answered Safaricom with a 500. Treat it as not reconciled.
+                    boolean reconciled = Boolean.TRUE.equals(reconciledStore.get(clientCorrelationId));
+                    if (!reconciledStore.containsKey(clientCorrelationId)) {
+                        logger.warn("No reconciliation result stored for {}; answering Rejected", clientCorrelationId);
+                    }
                     // Storing the key value
                     workflowInstanceStore.put(clientCorrelationId, workflowInstanceKey);
                     reconciledStore.remove(clientCorrelationId);
@@ -190,14 +198,21 @@ public class PaybillRoute extends ErrorHandlerRouteBuilder {
                     //Getting mpesa and workflow transaction id and removing key
                     String mpesaTransactionId = paybillConfirmationRequestDTO.getTransactionID();
                     String transactionId = workflowInstanceStore.get(mpesaTransactionId);
-                    workflowInstanceStore.remove(mpesaTransactionId);
 
                     Map<String, Object> variables = new HashMap<>();
                     variables.put("confirmationReceived", true);
                     variables.put(CHANNEL_REQUEST, obj.toString());
                     variables.put("amount", paybillConfirmationRequestDTO.getTransactionAmount());
                     variables.put("accountId", paybillConfirmationRequestDTO.getBillRefNo());
-                    variables.put("originDate", Long.parseLong(paybillConfirmationRequestDTO.getTransactionTime()));
+                    // TransTime may be missing; parsing it unchecked answered the confirmation with a 500.
+                    // (It is yyyyMMddHHmmss, not epoch milliseconds - see PHEE-422; value kept as it was.)
+                    String transactionTime = paybillConfirmationRequestDTO.getTransactionTime();
+                    if (transactionTime != null && transactionTime.trim().matches("\\d+")) {
+                        variables.put("originDate", Long.parseLong(transactionTime.trim()));
+                    } else {
+                        logger.warn("Paybill confirmation {} has no numeric TransTime ({}); originDate not set",
+                                mpesaTransactionId, transactionTime);
+                    }
                     variables.put("phoneNumber", paybillConfirmationRequestDTO.getMsisdn());
                     variables.put("mpesaTransactionId", mpesaTransactionId);
                     variables.put(TRANSACTION_ID, transactionId);
@@ -205,15 +220,21 @@ public class PaybillRoute extends ErrorHandlerRouteBuilder {
                     logger.info("Workflow transaction id : {}", transactionId);
 
                     if (transactionId != null) {
+                        // Joined, with the configured TTL (zeebe.client.ttl, 30 s) rather than 300 ms,
+                        // and the store entry removed only once the message is accepted, so a
+                        // confirmation Safaricom retries after a failure can still be correlated.
                         zeebeClient.newPublishMessageCommand()
                                 .messageName("pendingConfirmation")
                                 .correlationKey(transactionId)
-                                .timeToLive(Duration.ofMillis(300))
+                                .timeToLive(Duration.ofMillis(zeebeProperties.client().ttl()))
                                 .variables(variables)
-                                .send();
-                        logger.debug("Published Variables");
+                                .send()
+                                .join();
+                        workflowInstanceStore.remove(mpesaTransactionId);
+                        logger.info("Published pendingConfirmation for transaction {} (M-Pesa {})", transactionId, mpesaTransactionId);
                     } else {
-                        logger.debug("No workflow of such transaction ID exists");
+                        logger.warn("Paybill confirmation for M-Pesa transaction {} matches no workflow in this pod's store; "
+                                + "it is not correlated (the store is in memory and lost on restart)", mpesaTransactionId);
                     }
                 });
     }
